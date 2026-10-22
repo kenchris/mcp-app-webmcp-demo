@@ -1,10 +1,13 @@
+#!/usr/bin/env node
 // Copyright (C) 2026 Kenneth Rohde Christiansen
 // SPDX-License-Identifier: Apache-2.0
 // A dependency-free MCP server (streamable HTTP, JSON replies, no sessions) that serves one MCP App.
 // The App (src/view.html) exposes its own tools to the host with WebMCP (document.modelContext);
 // the server side only has the tools that open the View and read scores.
 import { createServer } from 'node:http';
+import { createInterface } from 'node:readline';
 import { readFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 export const VIEW_URI = 'ui://webmcp-demo/lanterns';
@@ -102,8 +105,29 @@ export function createDemoServer() {
   });
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const at = process.argv.indexOf('--port');
-  const port = at >= 0 ? Number(process.argv[at + 1]) : 8787;
-  createDemoServer().listen(port, '127.0.0.1', () => console.log(`MCP at http://127.0.0.1:${port}/mcp`));
+// stdio: newline-delimited JSON-RPC, for hosts that launch the server themselves (`--stdio`).
+function serveStdio() {
+  const rl = createInterface({ input: process.stdin });
+  rl.on('line', async (line) => {
+    if (!line.trim()) return;
+    let m;
+    try { m = JSON.parse(line); } catch { return; }
+    let reply;
+    try { reply = await handle(m); } catch (e) { reply = err(m.id, -32603, String(e?.message || e)); }
+    if (reply !== null) process.stdout.write(JSON.stringify(reply) + '\n');
+  });
+  rl.on('close', () => process.exit(0));
+}
+
+const isMain = (() => {
+  try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; }
+})();
+if (isMain) {
+  if (process.argv.includes('--stdio')) {
+    serveStdio();
+  } else {
+    const at = process.argv.indexOf('--port');
+    const port = at >= 0 ? Number(process.argv[at + 1]) : 8787;
+    createDemoServer().listen(port, '127.0.0.1', () => console.log(`MCP at http://127.0.0.1:${port}/mcp`));
+  }
 }

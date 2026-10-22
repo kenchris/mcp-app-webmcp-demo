@@ -51,3 +51,14 @@ test('unknown resource and method fail cleanly', async () => {
   assert.equal((await call('resources/read', { uri: 'ui://nope' })).error.code, -32002);
   assert.equal((await call('nope')).error.code, -32601);
 });
+
+test('--stdio answers newline-delimited JSON-RPC', async () => {
+  const { spawn } = await import('node:child_process');
+  const child = spawn(process.execPath, [new URL('../src/server.mjs', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'), '--stdio']);
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; });
+  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) + '\n');
+  for (let i = 0; i < 50 && !out.includes('\n'); i++) await new Promise((r) => setTimeout(r, 50));
+  child.stdin.end();
+  assert.ok(JSON.parse(out.split('\n')[0]).result.tools.some((t) => t.name === 'start_game'));
+});

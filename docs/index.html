@@ -24,6 +24,9 @@
   #pad button:disabled, #light:disabled { opacity: .35; cursor: default; }
   #light { grid-column: 1 / 4; font-size: 14px; }
   #banner a { color: inherit; }
+  #howto { margin-top: 14px; max-width: 640px; font-size: 14px; }
+  #howto summary { cursor: pointer; font-weight: 600; }
+  #howto pre { padding: 8px 10px; border-radius: 6px; background: #8882; overflow-x: auto; font-size: 12px; }
 </style>
 <script>
 // Standalone page with no WebMCP in the browser: ?polyfill=1 loads a minimal document.modelContext.
@@ -40,6 +43,29 @@ if (/[?&]polyfill=1\b/.test(location.search) && !document.modelContext) document
   <button id="light">Light lantern</button>
 </div>
 <div id="tools"></div>
+<details id="howto" hidden>
+  <summary>Use it as an MCP App</summary>
+  <p>This page is also an <a href="https://github.com/modelcontextprotocol/ext-apps">MCP App</a>. A web page cannot be an MCP
+  server, so run the server (Node 20+, no install step) and add it to your host:</p>
+  <p><b>Launched by the host (stdio)</b>, for hosts with an <code>mcpServers</code> config:</p>
+  <pre>{
+  "mcpServers": {
+    "lantern-grid": {
+      "command": "npx",
+      "args": ["-y", "github:kenchris/mcp-app-webmcp-demo", "--stdio"]
+    }
+  }
+}</pre>
+  <p><b>Over HTTP</b>, for hosts that take a server URL:</p>
+  <pre>npx -y github:kenchris/mcp-app-webmcp-demo --port 8787
+# then add  http://127.0.0.1:8787/mcp</pre>
+  <p>Then ask: <i>"Start a Lantern Grid game and light all the lanterns."</i> The model opens this view with
+  <code>start_game</code>; if the host supports WebMCP in MCP Apps, it then plays with the tools the view registers
+  (<code>look</code>, <code>move</code>, <code>light_lantern</code>, ...). A host without that support still shows the view, but
+  the model will not see those tools.</p>
+  <p>Hosts that need a public <code>https</code> endpoint (for example ChatGPT) need the server behind a tunnel.
+  <a href="https://github.com/kenchris/mcp-app-webmcp-demo#readme">More in the README</a>.</p>
+</details>
 <script>
 // ---- MCP Apps handshake (hand-rolled JSON-RPC over postMessage; no SDK needed) ----
 let rpcId = 0;
@@ -205,6 +231,7 @@ if (!mc) {
     + 'or <a href="?polyfill=1">load a minimal polyfill</a> and call the tools from the console.';
 }
 newGame(5);
+if (!embedded) $('howto').hidden = false;
 if (embedded) {
   rpc('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'lantern-grid', version: '0.1.0' }, appCapabilities: {} })
     .then(() => notify('ui/notifications/initialized', {}))

@@ -22,7 +22,38 @@ discover and call. Without WebMCP you can still play with the on-screen buttons 
 lantern); the page then says no tools are registered. `?polyfill=1` loads a minimal `document.modelContext`, enough
 to try the tools from the console.
 
-## Run it
+## Use it as an MCP App
+
+A web page cannot be an MCP server, so the MCP App needs the small server in this repo. Node 20+, no install step.
+
+**Launched by the host (stdio)**, for hosts with an `mcpServers` config (Claude Desktop, VS Code, Cursor, ...):
+
+```json
+{
+  "mcpServers": {
+    "lantern-grid": {
+      "command": "npx",
+      "args": ["-y", "github:kenchris/mcp-app-webmcp-demo", "--stdio"]
+    }
+  }
+}
+```
+
+**Over HTTP**, for hosts that take a server URL (for example the OpenVINO Web Extension):
+
+```sh
+npx -y github:kenchris/mcp-app-webmcp-demo --port 8787     # MCP endpoint: http://127.0.0.1:8787/mcp
+```
+
+Hosts that need a public `https` endpoint (ChatGPT, for instance) need the server behind a tunnel.
+
+Then ask the model: *"Start a Lantern Grid game and light all the lanterns."* It opens the view with `start_game`.
+If the host supports WebMCP in MCP Apps, the model then plays with the tools the view registers. A host without that
+support still shows the view, but the model does not see those tools, which is a result in itself.
+
+From a checkout, `node src/server.mjs --stdio` or `node src/server.mjs --port 8787` does the same.
+
+## Run it from a checkout
 
 ```sh
 git clone https://github.com/kenchris/mcp-app-webmcp-demo
@@ -31,8 +62,7 @@ node src/server.mjs --port 8787      # MCP endpoint: http://127.0.0.1:8787/mcp
 npm test                             # protocol checks for the server
 ```
 
-Add `http://127.0.0.1:8787/mcp` as an MCP server in your host, then ask the model something like
-*"Start a Lantern Grid game and light all the lanterns."*
+The same instructions are on the hosted page, in the "Use it as an MCP App" section.
 
 ### Without a host
 

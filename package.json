@@ -16,5 +16,13 @@
     "type": "git",
     "url": "git+https://github.com/kenchris/mcp-app-webmcp-demo.git"
   },
-  "author": "Kenneth Rohde Christiansen"
+  "author": "Kenneth Rohde Christiansen",
+  "bin": {
+    "mcp-app-webmcp-demo": "src/server.mjs"
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ]
 }
