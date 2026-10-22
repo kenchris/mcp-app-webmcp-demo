@@ -8,5 +8,12 @@
     "start": "node src/server.mjs",
     "test": "node --test \"test/*.test.mjs\""
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kenchris/mcp-app-webmcp-demo.git"
+  },
+  "author": "Kenneth Rohde Christiansen"
 }

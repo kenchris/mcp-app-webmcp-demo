@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Minimal document.modelContext registry for opening the view in a plain browser tab (no host).
 // Not the polyfill any host should ship: it exists so the view can be exercised standalone.
 (function (doc) {

@@ -1,24 +1,55 @@
 # mcp-app-webmcp-demo
 
-A small MCP App for testing hosts that support **WebMCP inside MCP Apps**. The View is a game
-("Lantern Grid") that exposes its own tools with `document.modelContext.registerTool()`, the way
-[ext-apps#797](https://github.com/modelcontextprotocol/ext-apps/issues/797) and
-[PR #798](https://github.com/modelcontextprotocol/ext-apps/pull/798) propose. The server has no
-dependencies and no SDK: one file of JSON-RPC over streamable HTTP.
+A small [MCP App](https://github.com/modelcontextprotocol/ext-apps) for testing hosts that support
+**WebMCP inside MCP Apps**.
 
-## Run
+The View is a little game, *Lantern Grid*. Instead of the host calling server tools to play it, the View
+exposes its own tools with [`document.modelContext.registerTool()`](https://webmachinelearning.github.io/webmcp/),
+the direction discussed in
+[ext-apps#797](https://github.com/modelcontextprotocol/ext-apps/issues/797) and prototyped in
+[ext-apps#798](https://github.com/modelcontextprotocol/ext-apps/pull/798). The tool list changes while you
+play, which makes it a useful probe for how a host handles tools that come and go.
+
+The server has no dependencies and no SDK: one file of JSON-RPC over streamable HTTP. Node 20 or newer.
+
+## Run it
 
 ```sh
+git clone https://github.com/kenchris/mcp-app-webmcp-demo
+cd mcp-app-webmcp-demo
 node src/server.mjs --port 8787      # MCP endpoint: http://127.0.0.1:8787/mcp
 npm test                             # protocol checks for the server
 ```
 
-Add `http://127.0.0.1:8787/mcp` as an MCP server in your host, then ask the model to
-"start a Lantern Grid game and light all the lanterns".
+Add `http://127.0.0.1:8787/mcp` as an MCP server in your host, then ask the model something like
+*"Start a Lantern Grid game and light all the lanterns."*
 
-Without a host, open the View in a tab: `http://127.0.0.1:8787/view?polyfill=1`. The `polyfill=1`
-variant adds a minimal `document.modelContext` (see `src/dev-polyfill.js`), so you can call
-`await document.modelContext.getTools()` in the console. Arrow keys move, Enter lights a lantern.
+### Without a host
+
+Open `http://127.0.0.1:8787/view?polyfill=1` in a tab. The `polyfill=1` variant adds a minimal
+`document.modelContext` (`src/dev-polyfill.js`), so you can try the tools from the console:
+
+```js
+const tools = await document.modelContext.getTools();
+await document.modelContext.executeTool(tools.find(t => t.name === 'look'));
+```
+
+Arrow keys move, Enter lights a lantern. Plain `/view` loads the View without a polyfill and shows a banner,
+which is what a host that provides no WebMCP looks like.
+
+## How the game works
+
+A grid with a few unlit lanterns. Walk onto each one and light it. When the last one is lit you win, and a
+new game can be started with `new_game`.
+
+```
+start_game (server tool) ──▶ host opens ui://webmcp-demo/lanterns
+                                  │
+                      View ◀─ ui/initialize ─▶ host
+                      View registers look, count_lit, explode, then move
+                                  │
+                      model ──▶ move / light_lantern / look ──▶ View
+```
 
 ## What it exercises
 
@@ -31,31 +62,44 @@ variant adds a minimal `document.modelContext` (see `src/dev-polyfill.js`), so y
 | `light_lantern` | View | Registered **only while standing on an unlit lantern**, so the list changes after every move (`toolchange`) |
 | `count_lit` | View | Returns a bare number, not an object |
 | `explode` | View | Always throws: the error path |
-| `new_game` | View | Appears only after you win, while `look`, `move` and `light_lantern` are **unregistered** (abort signal) |
+| `new_game` | View | Appears only after you win, while `look`, `move` and `light_lantern` are **unregistered** through their abort signals |
 
 Also covered: `ui/initialize` and `ui/notifications/initialized`, `ui/update-model-context` after every
 state change, `ui/notifications/size-changed`, and a visible banner when the host provides no
 `document.modelContext`.
 
-## Expected tool lists
+## Checklist for host implementers
 
-| Moment | Tools the View has registered |
+The tools the View has registered at each moment:
+
+| Moment | Tools |
 | --- | --- |
-| just after start | `look`, `count_lit`, `explode`, then `move` after ~250 ms |
-| on an unlit lantern | the above plus `light_lantern` |
+| just after start | `look`, `count_lit`, `explode`, then `move` after about 250 ms |
+| standing on an unlit lantern | the above plus `light_lantern` |
 | after lighting the last lantern | `count_lit`, `explode`, `new_game` |
 | after `new_game` | `look`, `count_lit`, `explode`, then `move` |
 
-A host passes if its model sees each of these lists as they change, without the user doing anything,
-and a tool call reaches the View and comes back (including the error from `explode`).
+A host passes if:
+
+- the model sees each of these lists as it changes, without the user doing anything (the late `move`, and
+  `light_lantern` coming and going);
+- a call reaches the View and its result comes back, including the bare number from `count_lit`;
+- the error from `explode` arrives as a tool error and does not break the turn;
+- tools that were unregistered disappear from the model's list, and nothing from a closed View lingers;
+- the View's tools do not collide with server tools such as `start_game`.
+
+`window.__demo` exposes `state()` and `registeredTools()`, so a browser test can compare the View's own idea
+of its tools with what the host shows.
 
 ## Notes
 
-- The View is a single self-contained HTML file with no external requests, so it works under a strict CSP.
-- It never calls `registerTool` if `document.modelContext` is missing; it does not polyfill it itself.
-  Providing it is the host's job, as the proposal says.
-- `window.__demo` exposes `state()` and `registeredTools()` for browser tests.
+- The View is one self-contained HTML file with no external requests, so it works under a strict CSP.
+- It never polyfills `document.modelContext` itself. If the host provides none, it shows a banner and
+  registers nothing. Providing it is the host's job, as the proposal says.
+- The MCP App handshake is hand-rolled in the View (about 30 lines of JSON-RPC over `postMessage`), so there
+  is nothing to build or bundle.
+- The wire format between host and View for WebMCP tools is still a draft upstream and may change.
 
 ## License
 
-Apache-2.0
+Apache-2.0, see [LICENSE](LICENSE).
