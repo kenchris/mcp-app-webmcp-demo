@@ -1,0 +1,215 @@
+<!doctype html>
+<!-- Copyright (C) 2026 Kenneth Rohde Christiansen -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern Grid</title>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { margin: 0; padding: 12px; }
+  #banner { display: none; padding: 8px 10px; margin-bottom: 8px; border-radius: 6px; background: #fde8e8; color: #7a1010; }
+  #grid { display: grid; gap: 3px; width: max-content; }
+  .cell { position: relative; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 5px; background: #8882; font-size: 20px; }
+  .cell.lantern::after { content: "\1F3EE"; opacity: .45; }
+  .cell.lit::after { content: "\1F3EE"; opacity: 1; }
+  .cell.me { outline: 2px solid #3b82f6; background: #3b82f655; }
+  .cell.me.lantern:not(.lit) { background: #f59e0b66; }
+  #status { margin-top: 8px; font-size: 13px; }
+  #tools { margin-top: 8px; font: 12px ui-monospace, monospace; opacity: .8; }
+  #pad { margin-top: 10px; display: grid; grid-template-columns: repeat(3, 44px); gap: 4px; width: max-content; }
+  #pad button, #light { height: 40px; border: 1px solid #8886; border-radius: 6px; background: #8881; color: inherit; font-size: 18px; cursor: pointer; }
+  #pad button:disabled, #light:disabled { opacity: .35; cursor: default; }
+  #light { grid-column: 1 / 4; font-size: 14px; }
+  #banner a { color: inherit; }
+</style>
+<script>
+// Standalone page with no WebMCP in the browser: ?polyfill=1 loads a minimal document.modelContext.
+if (/[?&]polyfill=1\b/.test(location.search) && !document.modelContext) document.write('<script src="dev-polyfill.js"><\/script>');
+</script>
+</head>
+<body>
+<div id="banner"></div>
+<div id="grid" role="grid" aria-label="Lantern Grid"></div>
+<div id="status" aria-live="polite"></div>
+<div id="pad" aria-label="Controls">
+  <span></span><button data-dir="up" aria-label="Move up">&#9650;</button><span></span>
+  <button data-dir="left" aria-label="Move left">&#9664;</button><button data-dir="down" aria-label="Move down">&#9660;</button><button data-dir="right" aria-label="Move right">&#9654;</button>
+  <button id="light">Light lantern</button>
+</div>
+<div id="tools"></div>
+<script>
+// ---- MCP Apps handshake (hand-rolled JSON-RPC over postMessage; no SDK needed) ----
+let rpcId = 0;
+const pending = new Map();
+function rpc(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = ++rpcId;
+    pending.set(id, { resolve, reject });
+    parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
+  });
+}
+const notify = (method, params) => parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
+window.addEventListener('message', (event) => {
+  if (event.source !== parent) return;
+  const m = event.data;
+  if (!m || m.jsonrpc !== '2.0') return;
+  if (m.id !== undefined && !m.method) {
+    const p = pending.get(m.id);
+    pending.delete(m.id);
+    if (p) (m.error ? p.reject(new Error(m.error.message)) : p.resolve(m.result));
+  } else if (m.method === 'ui/notifications/tool-result') {
+    const size = m.params?.structuredContent?.size;
+    if (Number.isInteger(size)) newGame(size);
+  } else if (m.id !== undefined && m.method === 'ui/resource-teardown') {
+    parent.postMessage({ jsonrpc: '2.0', id: m.id, result: {} }, '*');
+  }
+});
+
+// ---- Game state ----
+const $ = (id) => document.getElementById(id);
+let size = 5, me, lanterns, lit, moves, won;
+const key = (x, y) => x + ',' + y;
+function newGame(n = size) {
+  size = n; me = { x: 0, y: 0 }; moves = 0; won = false; lit = new Set();
+  lanterns = new Set();
+  for (let i = 0; i < size; i++) lanterns.add(key((i * 2 + 1) % size, (i * 3 + 2) % size));
+  lanterns.delete(key(0, 0));
+  render(); syncTools(); reportContext();
+}
+const state = () => ({ size, position: { ...me }, moves, lanterns: lanterns.size, lit: lit.size, won,
+  onLantern: lanterns.has(key(me.x, me.y)) && !lit.has(key(me.x, me.y)) });
+
+function render() {
+  const g = $('grid');
+  g.style.gridTemplateColumns = 'repeat(' + size + ', 34px)';
+  g.textContent = '';
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const c = document.createElement('div');
+    c.className = 'cell' + (lanterns.has(key(x, y)) ? ' lantern' : '') + (lit.has(key(x, y)) ? ' lit' : '')
+      + (me.x === x && me.y === y ? ' me' : '');
+    g.append(c);
+  }
+  $('status').textContent = won ? 'All lanterns lit in ' + moves + ' moves.'
+    : 'Lit ' + lit.size + '/' + lanterns.size + ' lanterns, ' + moves + ' moves.';
+}
+
+// ---- Tools exposed with WebMCP ----
+// look           until the game is won (read-only)
+// move           registered ~250 ms after the game starts (late registration)
+// light_lantern  only while standing on an unlit lantern (the list changes as the player moves)
+// count_lit      answers with a bare number (non-object result)
+// explode        always throws (error path)
+// new_game       only after winning; look/move/light_lantern are unregistered until then
+const registered = new Map(); // name -> AbortController
+const mc = document.modelContext;
+function ensure(name, tool, want) {
+  if (!mc) return;
+  if (want && !registered.has(name)) {
+    const ac = new AbortController();
+    registered.set(name, ac);
+    mc.registerTool({ name, ...tool }, { signal: ac.signal }).catch((e) => {
+      registered.delete(name);
+      console.warn('registerTool failed', name, e);
+    });
+  } else if (!want && registered.has(name)) {
+    registered.get(name).abort();
+    registered.delete(name);
+  }
+}
+const TOOL_DEFS = {
+  look: { title: 'Look around', description: 'Describe the grid: your position, moves so far, lanterns and whether you stand on an unlit one.',
+    annotations: { readOnlyHint: true }, inputSchema: { type: 'object', properties: {} }, execute: async () => state() },
+  move: { title: 'Move', description: 'Move one cell. Stops at the edge.',
+    inputSchema: { type: 'object', properties: { direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] } }, required: ['direction'] },
+    execute: async ({ direction }) => {
+      const d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[direction];
+      if (!d) throw new Error('Unknown direction: ' + direction);
+      const x = me.x + d[0], y = me.y + d[1];
+      const blocked = x < 0 || y < 0 || x >= size || y >= size;
+      if (!blocked) { me = { x, y }; moves++; }
+      render(); syncTools(); reportContext();
+      return { moved: !blocked, ...state() };
+    } },
+  light_lantern: { title: 'Light the lantern here', description: 'Light the lantern on your cell. Only available while standing on an unlit lantern.',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => {
+      lit.add(key(me.x, me.y)); moves++;
+      if (lit.size === lanterns.size) won = true;
+      render(); syncTools(); reportContext();
+      return state();
+    } },
+  count_lit: { description: 'How many lanterns are lit. Answers with a bare number.',
+    annotations: { readOnlyHint: true }, execute: async () => lit.size },
+  explode: { description: 'Always fails with an error. For testing error results.',
+    inputSchema: { type: 'object', properties: {} }, execute: async () => { throw new Error('The lantern exploded.'); } },
+  new_game: { description: 'Start over. Only available after the game is won.',
+    inputSchema: { type: 'object', properties: { size: { type: 'integer', minimum: 3, maximum: 9 } } },
+    execute: async ({ size: n } = {}) => { newGame(Number.isInteger(n) ? n : size); return state(); } },
+};
+let moveTimer;
+function syncTools() {
+  const s = state();
+  ensure('look', TOOL_DEFS.look, !won);
+  ensure('light_lantern', TOOL_DEFS.light_lantern, !won && s.onLantern);
+  ensure('count_lit', TOOL_DEFS.count_lit, true);
+  ensure('explode', TOOL_DEFS.explode, true);
+  ensure('new_game', TOOL_DEFS.new_game, won);
+  clearTimeout(moveTimer);
+  if (won) ensure('move', TOOL_DEFS.move, false);
+  else if (!registered.has('move')) moveTimer = setTimeout(() => ensure('move', TOOL_DEFS.move, !won), 250);
+  $('tools').textContent = 'tools: ' + [...registered.keys()].join(', ');
+}
+if (mc) mc.addEventListener('toolchange', () => {
+  document.documentElement.dataset.toolchanges = String(1 + Number(document.documentElement.dataset.toolchanges || 0));
+});
+
+// ---- Model context (what the model should know about the view) ----
+const embedded = window.parent !== window;
+function reportContext() {
+  if (!embedded) return;
+  rpc('ui/update-model-context', { content: [{ type: 'text', text: JSON.stringify(state()) }], structuredContent: state() })
+    .catch(() => {});
+}
+
+// ---- Keyboard play, so the view works without an agent too ----
+addEventListener('keydown', (e) => {
+  const dir = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }[e.key];
+  if (dir && !won) TOOL_DEFS.move.execute({ direction: dir });
+  else if (e.key === 'Enter' && state().onLantern) TOOL_DEFS.light_lantern.execute();
+});
+
+// ---- Test hooks ----
+window.__demo = { state, registeredTools: () => [...registered.keys()], hasModelContext: !!mc };
+
+// On-screen controls (the same code path as the tools).
+for (const b of document.querySelectorAll('#pad [data-dir]')) {
+  b.addEventListener('click', () => TOOL_DEFS.move.execute({ direction: b.dataset.dir }));
+}
+$('light').addEventListener('click', () => TOOL_DEFS.light_lantern.execute());
+function syncControls() {
+  const s = state();
+  for (const b of document.querySelectorAll('#pad [data-dir]')) b.disabled = won;
+  $('light').disabled = won || !s.onLantern;
+}
+const baseRender = render;
+render = function () { baseRender(); syncControls(); };
+
+if (!mc) {
+  const b = $('banner');
+  b.style.display = 'block';
+  b.innerHTML = 'This browser has no WebMCP (<code>document.modelContext</code>), so no tools are registered. '
+    + 'You can still play with the buttons or arrow keys. To let an agent play, use a browser or extension that provides WebMCP, '
+    + 'or <a href="?polyfill=1">load a minimal polyfill</a> and call the tools from the console.';
+}
+newGame(5);
+if (embedded) {
+  rpc('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'lantern-grid', version: '0.1.0' }, appCapabilities: {} })
+    .then(() => notify('ui/notifications/initialized', {}))
+    .then(() => notify('ui/notifications/size-changed', { height: document.documentElement.scrollHeight }))
+    .catch((e) => console.warn('ui/initialize failed', e));
+}
+</script>
+</body>
+</html>

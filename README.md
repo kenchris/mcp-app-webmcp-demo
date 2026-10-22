@@ -12,6 +12,16 @@ play, which makes it a useful probe for how a host handles tools that come and g
 
 The server has no dependencies and no SDK: one file of JSON-RPC over streamable HTTP. Node 20 or newer.
 
+## Play it
+
+**https://kenchris.github.io/mcp-app-webmcp-demo/**
+
+The same file is the MCP App View and a standalone web page, so it is also a plain **WebMCP** demo: open it in a
+browser or extension that provides `document.modelContext` and the page registers its tools there, for any agent to
+discover and call. Without WebMCP you can still play with the on-screen buttons or the arrow keys (Enter lights a
+lantern); the page then says no tools are registered. `?polyfill=1` loads a minimal `document.modelContext`, enough
+to try the tools from the console.
+
 ## Run it
 
 ```sh
@@ -26,15 +36,15 @@ Add `http://127.0.0.1:8787/mcp` as an MCP server in your host, then ask the mode
 
 ### Without a host
 
-Open `http://127.0.0.1:8787/view?polyfill=1` in a tab. The `polyfill=1` variant adds a minimal
-`document.modelContext` (`src/dev-polyfill.js`), so you can try the tools from the console:
+Open `http://127.0.0.1:8787/view?polyfill=1` in a tab (or the hosted page above with `?polyfill=1`). The variant adds
+a minimal `document.modelContext` (`src/dev-polyfill.js`), so you can try the tools from the console:
 
 ```js
 const tools = await document.modelContext.getTools();
 await document.modelContext.executeTool(tools.find(t => t.name === 'look'));
 ```
 
-Arrow keys move, Enter lights a lantern. Plain `/view` loads the View without a polyfill and shows a banner,
+Plain `/view` loads the View without a polyfill and shows a banner,
 which is what a host that provides no WebMCP looks like.
 
 ## How the game works
@@ -93,6 +103,7 @@ of its tools with what the host shows.
 
 ## Notes
 
+- The hosted page is built by `npm run build:pages` (copies `src/view.html` to `docs/index.html`, served from `master` /docs).
 - The View is one self-contained HTML file with no external requests, so it works under a strict CSP.
 - It never polyfills `document.modelContext` itself. If the host provides none, it shows a banner and
   registers nothing. Providing it is the host's job, as the proposal says.

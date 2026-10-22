@@ -80,14 +80,12 @@ async function handle(m) {
 
 export function createDemoServer() {
   return createServer((req, res) => {
-    if (req.method === 'GET' && req.url.split('?')[0] === '/view') {
-      // The View on its own, for a plain browser tab. `?polyfill=1` adds a minimal document.modelContext.
-      (async () => {
-        let html = await readFile(VIEW_PATH, 'utf8');
-        if (req.url.includes('polyfill=1')) html = html.replace('<script>', `<script>${await readFile(DEV_POLYFILL_PATH, 'utf8')}</script>
-<script>`);
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(html);
-      })().catch(() => res.writeHead(500).end());
+    const path = req.url.split('?')[0];
+    if (req.method === 'GET' && (path === '/view' || path === '/dev-polyfill.js')) {
+      // The View on its own, for a plain browser tab (`/view?polyfill=1` adds a minimal document.modelContext).
+      const file = path === '/view' ? VIEW_PATH : DEV_POLYFILL_PATH;
+      const type = path === '/view' ? 'text/html; charset=utf-8' : 'text/javascript; charset=utf-8';
+      readFile(file, 'utf8').then((body) => res.writeHead(200, { 'Content-Type': type }).end(body), () => res.writeHead(500).end());
       return;
     }
     if (req.method !== 'POST' || req.url !== '/mcp') { res.writeHead(405, { Allow: 'POST' }).end(); return; }

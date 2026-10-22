@@ -14,15 +14,30 @@
   .cell { position: relative; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 5px; background: #8882; font-size: 20px; }
   .cell.lantern::after { content: "\1F3EE"; opacity: .45; }
   .cell.lit::after { content: "\1F3EE"; opacity: 1; }
-  .cell.me { outline: 2px solid #3b82f6; }
+  .cell.me { outline: 2px solid #3b82f6; background: #3b82f655; }
+  .cell.me.lantern:not(.lit) { background: #f59e0b66; }
   #status { margin-top: 8px; font-size: 13px; }
   #tools { margin-top: 8px; font: 12px ui-monospace, monospace; opacity: .8; }
+  #pad { margin-top: 10px; display: grid; grid-template-columns: repeat(3, 44px); gap: 4px; width: max-content; }
+  #pad button, #light { height: 40px; border: 1px solid #8886; border-radius: 6px; background: #8881; color: inherit; font-size: 18px; cursor: pointer; }
+  #pad button:disabled, #light:disabled { opacity: .35; cursor: default; }
+  #light { grid-column: 1 / 4; font-size: 14px; }
+  #banner a { color: inherit; }
 </style>
+<script>
+// Standalone page with no WebMCP in the browser: ?polyfill=1 loads a minimal document.modelContext.
+if (/[?&]polyfill=1\b/.test(location.search) && !document.modelContext) document.write('<script src="dev-polyfill.js"><\/script>');
+</script>
 </head>
 <body>
-<div id="banner">document.modelContext is not available: the host provides no WebMCP.</div>
+<div id="banner"></div>
 <div id="grid" role="grid" aria-label="Lantern Grid"></div>
 <div id="status" aria-live="polite"></div>
+<div id="pad" aria-label="Controls">
+  <span></span><button data-dir="up" aria-label="Move up">&#9650;</button><span></span>
+  <button data-dir="left" aria-label="Move left">&#9664;</button><button data-dir="down" aria-label="Move down">&#9660;</button><button data-dir="right" aria-label="Move right">&#9654;</button>
+  <button id="light">Light lantern</button>
+</div>
 <div id="tools"></div>
 <script>
 // ---- MCP Apps handshake (hand-rolled JSON-RPC over postMessage; no SDK needed) ----
@@ -151,7 +166,9 @@ if (mc) mc.addEventListener('toolchange', () => {
 });
 
 // ---- Model context (what the model should know about the view) ----
+const embedded = window.parent !== window;
 function reportContext() {
+  if (!embedded) return;
   rpc('ui/update-model-context', { content: [{ type: 'text', text: JSON.stringify(state()) }], structuredContent: state() })
     .catch(() => {});
 }
@@ -166,12 +183,33 @@ addEventListener('keydown', (e) => {
 // ---- Test hooks ----
 window.__demo = { state, registeredTools: () => [...registered.keys()], hasModelContext: !!mc };
 
-if (!mc) $('banner').style.display = 'block';
+// On-screen controls (the same code path as the tools).
+for (const b of document.querySelectorAll('#pad [data-dir]')) {
+  b.addEventListener('click', () => TOOL_DEFS.move.execute({ direction: b.dataset.dir }));
+}
+$('light').addEventListener('click', () => TOOL_DEFS.light_lantern.execute());
+function syncControls() {
+  const s = state();
+  for (const b of document.querySelectorAll('#pad [data-dir]')) b.disabled = won;
+  $('light').disabled = won || !s.onLantern;
+}
+const baseRender = render;
+render = function () { baseRender(); syncControls(); };
+
+if (!mc) {
+  const b = $('banner');
+  b.style.display = 'block';
+  b.innerHTML = 'This browser has no WebMCP (<code>document.modelContext</code>), so no tools are registered. '
+    + 'You can still play with the buttons or arrow keys. To let an agent play, use a browser or extension that provides WebMCP, '
+    + 'or <a href="?polyfill=1">load a minimal polyfill</a> and call the tools from the console.';
+}
 newGame(5);
-rpc('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'lantern-grid', version: '0.1.0' }, appCapabilities: {} })
-  .then(() => notify('ui/notifications/initialized', {}))
-  .then(() => notify('ui/notifications/size-changed', { height: document.documentElement.scrollHeight }))
-  .catch((e) => console.warn('ui/initialize failed', e));
+if (embedded) {
+  rpc('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'lantern-grid', version: '0.1.0' }, appCapabilities: {} })
+    .then(() => notify('ui/notifications/initialized', {}))
+    .then(() => notify('ui/notifications/size-changed', { height: document.documentElement.scrollHeight }))
+    .catch((e) => console.warn('ui/initialize failed', e));
+}
 </script>
 </body>
 </html>
