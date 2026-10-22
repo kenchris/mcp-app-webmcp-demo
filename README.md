@@ -102,4 +102,4 @@ of its tools with what the host shows.
 
 ## License
 
-Apache-2.0, see [LICENSE](LICENSE).
+Copyright (C) 2026 Kenneth Rohde Christiansen. Apache-2.0, see [LICENSE](LICENSE).

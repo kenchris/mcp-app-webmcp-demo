@@ -1,3 +1,4 @@
+// Copyright (C) 2026 Kenneth Rohde Christiansen
 // SPDX-License-Identifier: Apache-2.0
 import test from 'node:test';
 import assert from 'node:assert/strict';

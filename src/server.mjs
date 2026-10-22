@@ -1,3 +1,4 @@
+// Copyright (C) 2026 Kenneth Rohde Christiansen
 // SPDX-License-Identifier: Apache-2.0
 // A dependency-free MCP server (streamable HTTP, JSON replies, no sessions) that serves one MCP App.
 // The App (src/view.html) exposes its own tools to the host with WebMCP (document.modelContext);
