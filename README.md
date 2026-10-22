@@ -103,6 +103,9 @@ of its tools with what the host shows.
 
 ## Notes
 
+- The hosted page carries a WebMCP [origin trial](https://developer.chrome.com/blog/ai-webmcp-origin-trial) token for
+  `https://kenchris.github.io` (Chrome 149+), so Chrome exposes native WebMCP there. It expires 2027-03-30; renew it and
+  update `scripts/build-pages.mjs`. The token is added by the build only, not to `src/view.html`.
 - The hosted page is built by `npm run build:pages` (copies `src/view.html` to `docs/index.html`, served from `master` /docs).
 - The View is one self-contained HTML file with no external requests, so it works under a strict CSP.
 - It never polyfills `document.modelContext` itself. If the host provides none, it shows a banner and
